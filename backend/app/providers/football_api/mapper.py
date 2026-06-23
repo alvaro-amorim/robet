@@ -11,7 +11,10 @@ from app.providers.football_api.schemas import PROVIDER
 def parse_datetime(value: str | None) -> datetime:
     if not value:
         return datetime.now(timezone.utc)
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(timezone.utc)
 
 
 def map_league_item(db: Session, item: dict[str, Any], season: int) -> CompetitionModel:
@@ -41,6 +44,9 @@ def map_fixture_item(db: Session, item: dict[str, Any], raw_payload_id: str) -> 
     status = fixture.get("status") or {}
 
     season = int(league.get("season") or 0)
+    fixture_id = fixture.get("id")
+    if fixture_id is None:
+        raise ValueError("Fixture da API-Football sem fixture.id.")
     competition = repositories.upsert_competition(
         db,
         external_provider=PROVIDER,
@@ -53,6 +59,7 @@ def map_fixture_item(db: Session, item: dict[str, Any], raw_payload_id: str) -> 
     )
     home_team = repositories.upsert_team(db, home.get("name") or "Unknown home team", home.get("country"))
     away_team = repositories.upsert_team(db, away.get("name") or "Unknown away team", away.get("country"))
+    db.flush()
     if home.get("id") is not None:
         repositories.upsert_team_alias(db, home_team.id, PROVIDER, str(home["id"]), home.get("name") or home_team.name)
     if away.get("id") is not None:
@@ -61,7 +68,7 @@ def map_fixture_item(db: Session, item: dict[str, Any], raw_payload_id: str) -> 
     return repositories.upsert_real_match(
         db,
         provider=PROVIDER,
-        external_id=str(fixture.get("id")),
+        external_id=str(fixture_id),
         competition=competition,
         home_team=home_team,
         away_team=away_team,

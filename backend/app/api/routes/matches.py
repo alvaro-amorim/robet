@@ -13,13 +13,13 @@ router = APIRouter()
 @router.get("/matches", response_model=list[Match])
 def get_matches(db: Session = Depends(get_db)) -> list[Match]:
     ensure_seeded(db, get_settings())
-    return repositories.list_matches(db)
+    return repositories.list_matches(db, only_mock=True)
 
 
 @router.get("/matches/world-cup", response_model=list[Match])
 def get_world_cup_matches(db: Session = Depends(get_db)) -> list[Match]:
     ensure_seeded(db, get_settings())
-    return repositories.list_matches(db)
+    return repositories.list_matches(db, only_mock=True)
 
 
 @router.get("/matches/real/world-cup", response_model=list[Match])

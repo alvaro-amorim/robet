@@ -60,6 +60,13 @@ def calculate_payload_hash(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def find_pending(db: Session, model_type: type, predicate):
+    for item in db.new:
+        if isinstance(item, model_type) and predicate(item):
+            return item
+    return None
+
+
 def save_raw_api_payload(
     db: Session,
     provider: str,
@@ -124,7 +131,8 @@ def upsert_competition(
     competition_type: str | None,
     is_active: bool,
 ) -> CompetitionModel:
-    existing = db.scalars(
+    model_id = f"{external_provider}_competition_{external_id}_{season}"
+    existing = find_pending(db, CompetitionModel, lambda item: item.id == model_id) or db.get(CompetitionModel, model_id) or db.scalars(
         select(CompetitionModel).where(
             CompetitionModel.external_provider == external_provider,
             CompetitionModel.external_id == str(external_id),
@@ -132,7 +140,7 @@ def upsert_competition(
         )
     ).first()
     now = utcnow()
-    model = existing or CompetitionModel(id=f"{external_provider}_competition_{external_id}_{season}", created_at=now)
+    model = existing or CompetitionModel(id=model_id, created_at=now)
     model.external_provider = external_provider
     model.external_id = str(external_id)
     model.name = name
@@ -156,7 +164,11 @@ def list_competitions(db: Session, provider: str | None = None, name_contains: s
 
 def upsert_team(db: Session, name: str, country: str | None = None) -> TeamModel:
     normalized_name = normalize_team_name(name)
-    model = db.scalars(
+    model = find_pending(
+        db,
+        TeamModel,
+        lambda item: item.normalized_name == normalized_name and item.country == country,
+    ) or db.scalars(
         select(TeamModel).where(
             TeamModel.normalized_name == normalized_name,
             TeamModel.country.is_(None) if country is None else TeamModel.country == country,
@@ -174,7 +186,8 @@ def upsert_team(db: Session, name: str, country: str | None = None) -> TeamModel
 
 
 def upsert_team_alias(db: Session, team_id: str, provider: str, external_id: str, external_name: str) -> TeamAliasModel:
-    model = db.scalars(
+    model_id = f"team_alias_{provider}_{external_id}"
+    model = find_pending(db, TeamAliasModel, lambda item: item.id == model_id) or db.get(TeamAliasModel, model_id) or db.scalars(
         select(TeamAliasModel).where(
             TeamAliasModel.provider == provider,
             TeamAliasModel.external_id == str(external_id),
@@ -182,7 +195,7 @@ def upsert_team_alias(db: Session, team_id: str, provider: str, external_id: str
     ).first()
     now = utcnow()
     if model is None:
-        model = TeamAliasModel(id=f"team_alias_{provider}_{external_id}", created_at=now)
+        model = TeamAliasModel(id=model_id, created_at=now)
     model.team_id = team_id
     model.provider = provider
     model.external_id = str(external_id)
@@ -209,7 +222,8 @@ def upsert_real_match(
 ) -> MatchModel:
     match_id = f"{provider}_fixture_{external_id}"
     now = utcnow()
-    model = db.get(MatchModel, match_id)
+    db.flush()
+    model = find_pending(db, MatchModel, lambda item: item.id == match_id) or db.get(MatchModel, match_id)
     if model is None:
         model = MatchModel(id=match_id, created_at=now)
     model.competition_id = competition.id
@@ -248,10 +262,12 @@ def upsert_match(db: Session, match: Match) -> MatchModel:
     return model
 
 
-def list_matches(db: Session, only_real: bool = False) -> list[Match]:
+def list_matches(db: Session, only_real: bool = False, only_mock: bool = False) -> list[Match]:
     statement = select(MatchModel).order_by(MatchModel.commence_time)
     if only_real:
         statement = statement.where(MatchModel.external_provider.is_not(None))
+    if only_mock:
+        statement = statement.where(MatchModel.external_provider.is_(None))
     rows = db.scalars(statement).all()
     return [Match(id=row.id, competition=row.competition, home_team=row.home_team, away_team=row.away_team, commence_time=row.commence_time, status=row.status) for row in rows]
 
