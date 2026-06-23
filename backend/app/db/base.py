@@ -96,14 +96,88 @@ class OddsSnapshotModel(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    match_id: Mapped[str] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True)
+    odds_event_id: Mapped[str | None] = mapped_column(ForeignKey("odds_events.id", ondelete="CASCADE"), nullable=True, index=True)
+    match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), nullable=True, index=True)
+    raw_payload_id: Mapped[str | None] = mapped_column(ForeignKey("raw_api_payloads.id", ondelete="SET NULL"), nullable=True)
+    bookmaker_id: Mapped[str | None] = mapped_column(ForeignKey("bookmakers.id", ondelete="SET NULL"), nullable=True, index=True)
+    market_id: Mapped[str | None] = mapped_column(ForeignKey("markets.id", ondelete="SET NULL"), nullable=True, index=True)
     bookmaker: Mapped[str] = mapped_column(String, nullable=False)
     market: Mapped[str] = mapped_column(String, nullable=False)
+    market_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     selection: Mapped[str] = mapped_column(String, nullable=False)
+    selection_name: Mapped[str | None] = mapped_column(String, nullable=True)
     odd_decimal: Mapped[float] = mapped_column(Float, nullable=False)
     point: Mapped[float | None] = mapped_column(Float, nullable=True)
     point_key: Mapped[str] = mapped_column(String, nullable=False)
+    implied_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_last_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OddsEventModel(Base):
+    __tablename__ = "odds_events"
+    __table_args__ = (UniqueConstraint("external_provider", "external_event_id", "sport_key", name="uq_odds_events_external"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    external_provider: Mapped[str] = mapped_column(String, nullable=False)
+    external_event_id: Mapped[str] = mapped_column(String, nullable=False)
+    sport_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    sport_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    commence_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    home_team: Mapped[str] = mapped_column(String, nullable=False)
+    away_team: Mapped[str] = mapped_column(String, nullable=False)
+    normalized_home_team: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    normalized_away_team: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    linked_match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id", ondelete="SET NULL"), nullable=True, index=True)
+    match_link_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw_payload_id: Mapped[str | None] = mapped_column(ForeignKey("raw_api_payloads.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BookmakerModel(Base):
+    __tablename__ = "bookmakers"
+    __table_args__ = (UniqueConstraint("external_provider", "external_key", name="uq_bookmakers_provider_key"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    external_provider: Mapped[str] = mapped_column(String, nullable=False)
+    external_key: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MarketModel(Base):
+    __tablename__ = "markets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OddsMarketSummaryModel(Base):
+    __tablename__ = "odds_market_summaries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    odds_event_id: Mapped[str] = mapped_column(ForeignKey("odds_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id", ondelete="SET NULL"), nullable=True, index=True)
+    market_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    selection_name: Mapped[str] = mapped_column(String, nullable=False)
+    point: Mapped[float | None] = mapped_column(Float, nullable=True)
+    best_odd: Mapped[float] = mapped_column(Float, nullable=False)
+    average_odd: Mapped[float] = mapped_column(Float, nullable=False)
+    median_odd: Mapped[float] = mapped_column(Float, nullable=False)
+    lowest_odd: Mapped[float] = mapped_column(Float, nullable=False)
+    bookmaker_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    market_spread: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_implied_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    devig_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_margin: Mapped[float | None] = mapped_column(Float, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class RecommendationModel(Base):

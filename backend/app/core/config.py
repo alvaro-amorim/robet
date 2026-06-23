@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     football_sync_max_requests_per_run: int = 10
     football_world_cup_search_terms: str = "world cup,fifa world cup,copa do mundo"
     football_default_season: int = 2026
+    odds_api_base_url: str = "https://api.the-odds-api.com/v4"
+    odds_api_key: str = ""
+    odds_primary_sport_key: str = "soccer_fifa_world_cup"
+    odds_api_regions: str = "eu"
+    odds_api_markets: str = "h2h,totals"
+    odds_api_odds_format: str = "decimal"
+    odds_api_date_format: str = "iso"
+    odds_api_timeout_seconds: int = 20
+    odds_api_cache_ttl_seconds: int = 900
 
     enable_live_mode: bool = False
     enable_real_money_mode: bool = False
@@ -40,6 +49,10 @@ class Settings(BaseSettings):
     @property
     def football_world_cup_search_term_list(self) -> list[str]:
         return [term.strip() for term in self.football_world_cup_search_terms.split(",") if term.strip()]
+
+    @property
+    def odds_api_market_list(self) -> list[str]:
+        return [market.strip() for market in self.odds_api_markets.split(",") if market.strip()]
 
 
 @lru_cache

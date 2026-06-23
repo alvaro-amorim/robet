@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import bankroll, bet_builder, dev, health, learning, matches, recommendations, settings, sync_football
+from app.api.routes import bankroll, bet_builder, dev, health, learning, matches, odds, recommendations, settings, sync_football
 from app.core.config import get_settings
 
 
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(dev.router)
     app.include_router(sync_football.router)
+    app.include_router(odds.router)
     return app
 
 

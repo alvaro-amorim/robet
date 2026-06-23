@@ -114,6 +114,11 @@ Acesse `http://127.0.0.1:3000`.
 - `POST /sync/football/competitions`
 - `POST /sync/football/world-cup-fixtures`
 - `POST /sync/football/results`
+- `GET /sync/odds/status`
+- `POST /sync/odds/world-cup`
+- `GET /odds/real/world-cup`
+- `GET /market-intelligence/odds-events`
+- `GET /market-intelligence/odds-events/{odds_event_id}`
 
 ## Testes
 
@@ -198,3 +203,42 @@ Antes de sincronizar dados reais, rode migrations:
 cd backend
 alembic upgrade head
 ```
+
+### Dados reais - The Odds API
+
+O Robet tambem pode sincronizar odds reais da Copa via The Odds API, mas isso continua sendo manual e separado do fluxo mockado padrao. Odds reais ainda nao geram recomendacoes reais neste ciclo.
+
+Configure no `.env` real, sem commitar a chave:
+
+```env
+ODDS_API_KEY=sua_chave_local
+ODDS_API_BASE_URL=https://api.the-odds-api.com/v4
+ODDS_PRIMARY_SPORT_KEY=soccer_fifa_world_cup
+ODDS_API_REGIONS=eu
+ODDS_API_MARKETS=h2h,totals
+ODDS_API_ODDS_FORMAT=decimal
+ODDS_API_DATE_FORMAT=iso
+ODDS_API_TIMEOUT_SECONDS=20
+ODDS_API_CACHE_TTL_SECONDS=900
+```
+
+Status da configuracao:
+
+```powershell
+Invoke-RestMethod -Method Get "http://127.0.0.1:8000/sync/odds/status"
+```
+
+Sincronizar odds reais uma vez, consumindo credito da API:
+
+```powershell
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/sync/odds/world-cup?confirm_real_sync=true"
+```
+
+Listar eventos e inteligencia basica de mercado persistida:
+
+```powershell
+Invoke-RestMethod -Method Get "http://127.0.0.1:8000/odds/real/world-cup"
+Invoke-RestMethod -Method Get "http://127.0.0.1:8000/market-intelligence/odds-events"
+```
+
+As odds reais podem ficar sem vinculo com partidas da API-Football enquanto a API-Football nao liberar fixtures da Copa 2026 no plano atual. Isso nao e erro: os eventos de odds sao persistidos de forma independente com `linked_match_id` nulo. O app continua com `USE_MOCK_PROVIDERS=true` e nao chama odds automaticamente ao abrir o dashboard.

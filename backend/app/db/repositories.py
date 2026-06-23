@@ -8,11 +8,15 @@ from sqlalchemy.orm import Session
 
 from app.db.base import (
     BankrollSnapshotModel,
+    BookmakerModel,
     CombinedBetLegModel,
     CombinedBetModel,
     CompetitionModel,
     LearningInsightModel,
+    MarketModel,
     MatchModel,
+    OddsEventModel,
+    OddsMarketSummaryModel,
     OddsSnapshotModel,
     RawApiPayloadModel,
     RearrangementSuggestionModel,
@@ -288,6 +292,180 @@ def upsert_odds_snapshot(db: Session, odds: OddsSnapshot, odds_id: str) -> OddsS
     return model
 
 
+def upsert_bookmaker(db: Session, provider: str, external_key: str, title: str) -> BookmakerModel:
+    model_id = f"bookmaker_{provider}_{external_key}"
+    model = find_pending(db, BookmakerModel, lambda item: item.id == model_id) or db.get(BookmakerModel, model_id) or db.scalars(
+        select(BookmakerModel).where(
+            BookmakerModel.external_provider == provider,
+            BookmakerModel.external_key == str(external_key),
+        )
+    ).first()
+    now = utcnow()
+    if model is None:
+        model = BookmakerModel(id=model_id, created_at=now)
+    model.external_provider = provider
+    model.external_key = str(external_key)
+    model.title = title
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def upsert_market(db: Session, key: str, name: str | None = None) -> MarketModel:
+    model_id = f"market_{key}"
+    model = find_pending(db, MarketModel, lambda item: item.id == model_id) or db.get(MarketModel, model_id) or db.scalars(select(MarketModel).where(MarketModel.key == key)).first()
+    now = utcnow()
+    if model is None:
+        model = MarketModel(id=model_id, created_at=now)
+    model.key = key
+    model.name = name or key
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def upsert_odds_event(
+    db: Session,
+    provider: str,
+    external_event_id: str,
+    sport_key: str,
+    sport_title: str | None,
+    commence_time: datetime,
+    home_team: str,
+    away_team: str,
+    normalized_home_team: str,
+    normalized_away_team: str,
+    raw_payload_id: str | None,
+    linked_match_id: str | None = None,
+    match_link_confidence: float | None = None,
+) -> OddsEventModel:
+    model_id = f"odds_event_{provider}_{sport_key}_{external_event_id}"
+    model = find_pending(db, OddsEventModel, lambda item: item.id == model_id) or db.get(OddsEventModel, model_id) or db.scalars(
+        select(OddsEventModel).where(
+            OddsEventModel.external_provider == provider,
+            OddsEventModel.external_event_id == str(external_event_id),
+            OddsEventModel.sport_key == sport_key,
+        )
+    ).first()
+    now = utcnow()
+    if model is None:
+        model = OddsEventModel(id=model_id, created_at=now)
+    model.external_provider = provider
+    model.external_event_id = str(external_event_id)
+    model.sport_key = sport_key
+    model.sport_title = sport_title
+    model.commence_time = commence_time
+    model.home_team = home_team
+    model.away_team = away_team
+    model.normalized_home_team = normalized_home_team
+    model.normalized_away_team = normalized_away_team
+    model.linked_match_id = linked_match_id
+    model.match_link_confidence = match_link_confidence
+    model.raw_payload_id = raw_payload_id
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def save_real_odds_snapshot(
+    db: Session,
+    odds_event_id: str,
+    match_id: str | None,
+    raw_payload_id: str | None,
+    bookmaker_id: str,
+    bookmaker_title: str,
+    market_id: str,
+    market_key: str,
+    selection_name: str,
+    odd_decimal: float,
+    point: float | None,
+    implied_probability: float,
+    captured_at: datetime,
+    source_last_update: datetime | None,
+) -> OddsSnapshotModel:
+    snapshot_id = f"odds_real_{raw_payload_id}_{bookmaker_id}_{odds_event_id}_{market_key}_{selection_name}_{point_key(point)}"
+    model = OddsSnapshotModel(id=snapshot_id)
+    model.odds_event_id = odds_event_id
+    model.match_id = match_id
+    model.raw_payload_id = raw_payload_id
+    model.bookmaker_id = bookmaker_id
+    model.market_id = market_id
+    model.bookmaker = bookmaker_title
+    model.market = market_key
+    model.market_key = market_key
+    model.selection = selection_name
+    model.selection_name = selection_name
+    model.odd_decimal = odd_decimal
+    model.point = point
+    model.point_key = point_key(point)
+    model.implied_probability = implied_probability
+    model.captured_at = captured_at
+    model.source_last_update = source_last_update
+    model.created_at = utcnow()
+    db.add(model)
+    return model
+
+
+def save_odds_market_summary(
+    db: Session,
+    odds_event_id: str,
+    match_id: str | None,
+    market_key: str,
+    selection_name: str,
+    point: float | None,
+    best_odd: float,
+    average_odd: float,
+    median_odd: float,
+    lowest_odd: float,
+    bookmaker_count: int,
+    market_spread: float,
+    raw_implied_probability: float,
+    devig_probability: float | None,
+    market_margin: float | None,
+    captured_at: datetime,
+) -> OddsMarketSummaryModel:
+    model = OddsMarketSummaryModel(
+        id=f"odds_summary_{uuid4().hex}",
+        odds_event_id=odds_event_id,
+        match_id=match_id,
+        market_key=market_key,
+        selection_name=selection_name,
+        point=point,
+        best_odd=best_odd,
+        average_odd=average_odd,
+        median_odd=median_odd,
+        lowest_odd=lowest_odd,
+        bookmaker_count=bookmaker_count,
+        market_spread=market_spread,
+        raw_implied_probability=raw_implied_probability,
+        devig_probability=devig_probability,
+        market_margin=market_margin,
+        captured_at=captured_at,
+        created_at=utcnow(),
+    )
+    db.add(model)
+    return model
+
+
+def list_odds_events(db: Session, sport_key: str | None = None) -> list[OddsEventModel]:
+    statement = select(OddsEventModel).order_by(OddsEventModel.commence_time, OddsEventModel.home_team)
+    if sport_key:
+        statement = statement.where(OddsEventModel.sport_key == sport_key)
+    return list(db.scalars(statement).all())
+
+
+def list_odds_market_summaries(db: Session, odds_event_id: str | None = None) -> list[OddsMarketSummaryModel]:
+    statement = select(OddsMarketSummaryModel).order_by(
+        OddsMarketSummaryModel.captured_at.desc(),
+        OddsMarketSummaryModel.market_key,
+        OddsMarketSummaryModel.selection_name,
+        OddsMarketSummaryModel.point,
+    )
+    if odds_event_id:
+        statement = statement.where(OddsMarketSummaryModel.odds_event_id == odds_event_id)
+    return list(db.scalars(statement).all())
+
+
 def list_odds_snapshots(db: Session) -> list[OddsSnapshot]:
     rows = db.scalars(select(OddsSnapshotModel).order_by(OddsSnapshotModel.match_id, OddsSnapshotModel.market)).all()
     return [
@@ -506,6 +684,7 @@ def upsert_simulation_result(
 def clear_development_data(db: Session) -> None:
     for model in [
         SimulationResultModel,
+        OddsMarketSummaryModel,
         RearrangementSuggestionModel,
         CombinedBetLegModel,
         CombinedBetModel,
@@ -513,6 +692,9 @@ def clear_development_data(db: Session) -> None:
         BankrollSnapshotModel,
         RecommendationModel,
         OddsSnapshotModel,
+        OddsEventModel,
+        MarketModel,
+        BookmakerModel,
         TeamAliasModel,
         MatchModel,
         TeamModel,
