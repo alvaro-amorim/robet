@@ -1,19 +1,27 @@
+import hashlib
+import json
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.base import (
     BankrollSnapshotModel,
     CombinedBetLegModel,
     CombinedBetModel,
+    CompetitionModel,
     LearningInsightModel,
     MatchModel,
     OddsSnapshotModel,
+    RawApiPayloadModel,
     RearrangementSuggestionModel,
     RecommendationModel,
     SimulationResultModel,
+    TeamAliasModel,
+    TeamModel,
 )
+from app.domain.normalization.team import normalize_team_name
 from app.schemas.models import (
     Bankroll,
     CombinedBet,
@@ -34,6 +42,196 @@ def point_key(point: float | None) -> str:
     return "none" if point is None else str(point)
 
 
+SENSITIVE_PARAM_KEYS = {"api_key", "apikey", "key", "token", "secret", "x-apisports-key"}
+
+
+def sanitize_request_params(params: dict | None) -> dict:
+    safe_params = {}
+    for key, value in (params or {}).items():
+        if key.lower() in SENSITIVE_PARAM_KEYS:
+            safe_params[key] = "[REDACTED]"
+        else:
+            safe_params[key] = value
+    return safe_params
+
+
+def calculate_payload_hash(payload: dict) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def save_raw_api_payload(
+    db: Session,
+    provider: str,
+    endpoint: str,
+    request_method: str,
+    request_params: dict | None,
+    response_status: int | None,
+    raw_payload: dict,
+    source_timestamp: datetime | None = None,
+    cost_estimate: float = 1.0,
+    error_message: str | None = None,
+) -> RawApiPayloadModel:
+    payload_hash = calculate_payload_hash(
+        {
+            "provider": provider,
+            "endpoint": endpoint,
+            "request_method": request_method.upper(),
+            "request_params": sanitize_request_params(request_params),
+            "response_status": response_status,
+            "raw_payload": raw_payload,
+            "error_message": error_message,
+        }
+    )
+    model = RawApiPayloadModel(
+        id=f"raw_{uuid4().hex}",
+        provider=provider,
+        endpoint=endpoint,
+        request_method=request_method.upper(),
+        request_params_json=sanitize_request_params(request_params),
+        response_status=response_status,
+        raw_payload_json=raw_payload,
+        payload_hash=payload_hash,
+        collected_at=utcnow(),
+        source_timestamp=source_timestamp,
+        cost_estimate=cost_estimate,
+        error_message=error_message,
+    )
+    db.add(model)
+    db.flush()
+    return model
+
+
+def count_raw_api_payloads_since(db: Session, provider: str, since: datetime) -> int:
+    return int(
+        db.scalar(
+            select(func.count()).select_from(RawApiPayloadModel).where(
+                RawApiPayloadModel.provider == provider,
+                RawApiPayloadModel.collected_at >= since,
+            )
+        )
+        or 0
+    )
+
+
+def upsert_competition(
+    db: Session,
+    external_provider: str,
+    external_id: str,
+    name: str,
+    country: str | None,
+    season: int,
+    competition_type: str | None,
+    is_active: bool,
+) -> CompetitionModel:
+    existing = db.scalars(
+        select(CompetitionModel).where(
+            CompetitionModel.external_provider == external_provider,
+            CompetitionModel.external_id == str(external_id),
+            CompetitionModel.season == season,
+        )
+    ).first()
+    now = utcnow()
+    model = existing or CompetitionModel(id=f"{external_provider}_competition_{external_id}_{season}", created_at=now)
+    model.external_provider = external_provider
+    model.external_id = str(external_id)
+    model.name = name
+    model.country = country
+    model.season = season
+    model.type = competition_type
+    model.is_active = is_active
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def list_competitions(db: Session, provider: str | None = None, name_contains: str | None = None) -> list[CompetitionModel]:
+    statement = select(CompetitionModel).order_by(CompetitionModel.season.desc(), CompetitionModel.name)
+    if provider:
+        statement = statement.where(CompetitionModel.external_provider == provider)
+    if name_contains:
+        statement = statement.where(CompetitionModel.name.ilike(f"%{name_contains}%"))
+    return list(db.scalars(statement).all())
+
+
+def upsert_team(db: Session, name: str, country: str | None = None) -> TeamModel:
+    normalized_name = normalize_team_name(name)
+    model = db.scalars(
+        select(TeamModel).where(
+            TeamModel.normalized_name == normalized_name,
+            TeamModel.country.is_(None) if country is None else TeamModel.country == country,
+        )
+    ).first()
+    now = utcnow()
+    if model is None:
+        model = TeamModel(id=f"team_{uuid4().hex[:12]}", created_at=now)
+    model.name = name
+    model.normalized_name = normalized_name
+    model.country = country
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def upsert_team_alias(db: Session, team_id: str, provider: str, external_id: str, external_name: str) -> TeamAliasModel:
+    model = db.scalars(
+        select(TeamAliasModel).where(
+            TeamAliasModel.provider == provider,
+            TeamAliasModel.external_id == str(external_id),
+        )
+    ).first()
+    now = utcnow()
+    if model is None:
+        model = TeamAliasModel(id=f"team_alias_{provider}_{external_id}", created_at=now)
+    model.team_id = team_id
+    model.provider = provider
+    model.external_id = str(external_id)
+    model.external_name = external_name
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
+def upsert_real_match(
+    db: Session,
+    provider: str,
+    external_id: str,
+    competition: CompetitionModel,
+    home_team: TeamModel,
+    away_team: TeamModel,
+    home_team_name_snapshot: str,
+    away_team_name_snapshot: str,
+    commence_time: datetime,
+    status: str,
+    raw_payload_id: str | None,
+    home_score: int | None = None,
+    away_score: int | None = None,
+) -> MatchModel:
+    match_id = f"{provider}_fixture_{external_id}"
+    now = utcnow()
+    model = db.get(MatchModel, match_id)
+    if model is None:
+        model = MatchModel(id=match_id, created_at=now)
+    model.competition_id = competition.id
+    model.external_provider = provider
+    model.external_id = str(external_id)
+    model.home_team_id = home_team.id
+    model.away_team_id = away_team.id
+    model.competition = competition.name
+    model.home_team = home_team.name
+    model.away_team = away_team.name
+    model.home_team_name_snapshot = home_team_name_snapshot
+    model.away_team_name_snapshot = away_team_name_snapshot
+    model.commence_time = commence_time
+    model.status = status
+    model.home_score = home_score
+    model.away_score = away_score
+    model.raw_payload_id = raw_payload_id
+    model.updated_at = now
+    db.add(model)
+    return model
+
+
 def upsert_match(db: Session, match: Match) -> MatchModel:
     model = db.get(MatchModel, match.id)
     if model is None:
@@ -43,12 +241,18 @@ def upsert_match(db: Session, match: Match) -> MatchModel:
     model.away_team = match.away_team
     model.commence_time = match.commence_time
     model.status = match.status
+    model.home_team_name_snapshot = match.home_team
+    model.away_team_name_snapshot = match.away_team
+    model.updated_at = utcnow()
     db.add(model)
     return model
 
 
-def list_matches(db: Session) -> list[Match]:
-    rows = db.scalars(select(MatchModel).order_by(MatchModel.commence_time)).all()
+def list_matches(db: Session, only_real: bool = False) -> list[Match]:
+    statement = select(MatchModel).order_by(MatchModel.commence_time)
+    if only_real:
+        statement = statement.where(MatchModel.external_provider.is_not(None))
+    rows = db.scalars(statement).all()
     return [Match(id=row.id, competition=row.competition, home_team=row.home_team, away_team=row.away_team, commence_time=row.commence_time, status=row.status) for row in rows]
 
 
@@ -293,6 +497,10 @@ def clear_development_data(db: Session) -> None:
         BankrollSnapshotModel,
         RecommendationModel,
         OddsSnapshotModel,
+        TeamAliasModel,
         MatchModel,
+        TeamModel,
+        CompetitionModel,
+        RawApiPayloadModel,
     ]:
         db.execute(delete(model))

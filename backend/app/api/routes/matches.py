@@ -20,3 +20,8 @@ def get_matches(db: Session = Depends(get_db)) -> list[Match]:
 def get_world_cup_matches(db: Session = Depends(get_db)) -> list[Match]:
     ensure_seeded(db, get_settings())
     return repositories.list_matches(db)
+
+
+@router.get("/matches/real/world-cup", response_model=list[Match])
+def get_real_world_cup_matches(db: Session = Depends(get_db)) -> list[Match]:
+    return repositories.list_matches(db, only_real=True)

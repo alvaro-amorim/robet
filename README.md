@@ -99,6 +99,7 @@ Acesse `http://127.0.0.1:3000`.
 - `GET /health`
 - `GET /matches`
 - `GET /matches/world-cup`
+- `GET /matches/real/world-cup`
 - `GET /recommendations`
 - `POST /recommendations/run-mock`
 - `GET /bet-builder/history`
@@ -109,6 +110,10 @@ Acesse `http://127.0.0.1:3000`.
 - `GET /settings`
 - `POST /dev/seed`
 - `POST /dev/reset`
+- `GET /sync/football/status`
+- `POST /sync/football/competitions`
+- `POST /sync/football/world-cup-fixtures`
+- `POST /sync/football/results`
 
 ## Testes
 
@@ -133,4 +138,63 @@ Tambem existem odds mockadas para `h2h`, `totals`, escanteios e cartoes. A logic
 
 ## APIs reais
 
-APIs reais continuam desativadas neste ciclo. Nao chame API-Football, The Odds API, OpenAI, casas de aposta ou sites externos. A futura ativacao exige o fluxo mockado persistido validado, tratamento de erro de API, cache/logs de chamada e entrada manual preservada.
+O padrao do app continua mockado com `USE_MOCK_PROVIDERS=true`. O dashboard e os endpoints principais nao chamam API real automaticamente.
+
+### Dados reais - API-Football
+
+Este ciclo adiciona somente a fundacao de dados reais de futebol via API-Football:
+
+- busca manual de competicoes;
+- busca manual de fixtures da Copa;
+- sync manual de resultados/status;
+- salvamento de payload bruto em `raw_api_payloads`;
+- normalizacao basica de competicoes, times, aliases e partidas;
+- endpoint separado para listar fixtures reais persistidas.
+
+Nao chama The Odds API, OpenAI, casas de aposta, scraping, login, automacao externa ou live mode.
+
+Configure no `.env` real, sem commitar a chave:
+
+```env
+FOOTBALL_API_KEY=sua_chave_local
+FOOTBALL_REAL_SYNC_ENABLED=false
+FOOTBALL_SYNC_MAX_REQUESTS_PER_RUN=10
+FOOTBALL_API_DAILY_REQUEST_LIMIT=100
+FOOTBALL_DEFAULT_SEASON=2026
+FOOTBALL_WORLD_CUP_SEARCH_TERMS=world cup,fifa world cup,copa do mundo
+```
+
+Para ativar sync real manualmente em desenvolvimento, escolha uma das opcoes:
+
+```env
+FOOTBALL_REAL_SYNC_ENABLED=true
+```
+
+Ou mantenha a flag desligada e use confirmacao explicita por request:
+
+```powershell
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/sync/football/competitions?confirm_real_sync=true"
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/sync/football/world-cup-fixtures?confirm_real_sync=true"
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/sync/football/results?confirm_real_sync=true"
+```
+
+Status de sync:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/sync/football/status
+```
+
+Listar fixtures reais persistidas:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/matches/real/world-cup
+```
+
+Esses endpoints so funcionam em `APP_ENV=development` neste ciclo e consomem quota da API-Football. Cada resposta real e salva bruta sem headers sensiveis e sem chave de API nos parametros persistidos.
+
+Antes de sincronizar dados reais, rode migrations:
+
+```powershell
+cd backend
+alembic upgrade head
+```

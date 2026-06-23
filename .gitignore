@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.*
 .env.local
 .env.*.local
 !.env.example
@@ -39,3 +40,10 @@ logs/
 *.log
 storage/
 .tmp/
+data/raw/
+data/tmp/
+*.sample.json
+*_sample.json
+api_response*.json
+odds_world_cup_sample.json
+football_api_sample.json

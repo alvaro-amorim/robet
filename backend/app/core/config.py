@@ -8,6 +8,16 @@ class Settings(BaseSettings):
     use_mock_providers: bool = True
     database_url: str = "postgresql+psycopg://robet:robet_password@localhost:5432/robet"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    football_data_provider: str = "api_football"
+    football_api_base_url: str = "https://v3.football.api-sports.io"
+    football_api_key: str = ""
+    football_api_timeout_seconds: int = 20
+    football_api_cache_ttl_seconds: int = 3600
+    football_api_daily_request_limit: int = 100
+    football_real_sync_enabled: bool = False
+    football_sync_max_requests_per_run: int = 10
+    football_world_cup_search_terms: str = "world cup,fifa world cup,copa do mundo"
+    football_default_season: int = 2026
 
     enable_live_mode: bool = False
     enable_real_money_mode: bool = False
@@ -26,6 +36,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def football_world_cup_search_term_list(self) -> list[str]:
+        return [term.strip() for term in self.football_world_cup_search_terms.split(",") if term.strip()]
 
 
 @lru_cache
