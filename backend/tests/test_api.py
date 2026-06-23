@@ -1,18 +1,10 @@
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-
-client = TestClient(app)
-
-
-def test_health():
+def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["mode"] == "mock"
 
 
-def test_mock_flow():
+def test_mock_flow(client):
     assert client.get("/matches/world-cup").status_code == 200
     recommendations = client.post("/recommendations/run-mock")
     assert recommendations.status_code == 200
@@ -22,7 +14,7 @@ def test_mock_flow():
     assert bankroll.json()["initial_balance"] == 1000.0
 
 
-def test_combined_bet_endpoints():
+def test_combined_bet_endpoints(client):
     payload = {
         "match_id": "worldcup_mock_001",
         "offered_combined_odd": 2.2,

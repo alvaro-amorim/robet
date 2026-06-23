@@ -66,6 +66,11 @@ h2 {
   margin-bottom: 16px;
 }
 
+h3 {
+  font-size: 0.95rem;
+  margin: 18px 0 10px;
+}
+
 .metrics,
 .grid {
   display: grid;
@@ -182,6 +187,10 @@ select {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.history-block {
+  margin-top: 16px;
 }
 
 table {

@@ -58,6 +58,11 @@ type CombinedLeg = {
 };
 
 type CombinedResult = {
+  id: string;
+  match_id: string;
+  legs: CombinedLeg[];
+  individual_odds: number[];
+  offered_combined_odd: number;
   fair_combined_odd_estimate: number;
   estimated_joint_probability: number;
   adjusted_joint_probability: number;
@@ -85,6 +90,7 @@ function App() {
   const [bankroll, setBankroll] = useState<Bankroll | null>(null);
   const [insights, setInsights] = useState<LearningInsight[]>([]);
   const [combinedResult, setCombinedResult] = useState<CombinedResult | null>(null);
+  const [combinedHistory, setCombinedHistory] = useState<CombinedResult[]>([]);
   const [legs, setLegs] = useState<CombinedLeg[]>([
     { market: "corners", selection: "Over 7.5 corners", individual_odd: 1.2, estimated_probability: 0.78 },
     { market: "h2h", selection: "Brazil wins", individual_odd: 1.1, estimated_probability: 0.82 },
@@ -98,19 +104,21 @@ function App() {
   async function loadDashboard() {
     try {
       setError(null);
-      const [matchesResponse, recommendationsResponse, bankrollResponse, insightsResponse] = await Promise.all([
+      const [matchesResponse, recommendationsResponse, bankrollResponse, insightsResponse, combinedHistoryResponse] = await Promise.all([
         fetch(`${API_URL}/matches/world-cup`),
         fetch(`${API_URL}/recommendations`),
         fetch(`${API_URL}/bankroll`),
         fetch(`${API_URL}/learning/insights`),
+        fetch(`${API_URL}/bet-builder/history`),
       ]);
-      if (!matchesResponse.ok || !recommendationsResponse.ok || !bankrollResponse.ok || !insightsResponse.ok) {
+      if (!matchesResponse.ok || !recommendationsResponse.ok || !bankrollResponse.ok || !insightsResponse.ok || !combinedHistoryResponse.ok) {
         throw new Error("Falha ao carregar dados do backend.");
       }
       setMatches(await matchesResponse.json());
       setRecommendations(await recommendationsResponse.json());
       setBankroll(await bankrollResponse.json());
       setInsights(await insightsResponse.json());
+      setCombinedHistory(await combinedHistoryResponse.json());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Erro desconhecido.");
     } finally {
@@ -135,6 +143,7 @@ function App() {
       body: JSON.stringify({ match_id: matchId, offered_combined_odd: offeredOdd, legs }),
     });
     setCombinedResult(await response.json());
+    await loadDashboard();
   }
 
   const history = useMemo(() => recommendations.slice(0, 8), [recommendations]);
@@ -246,6 +255,24 @@ function App() {
             </div>
           ) : (
             <p className="muted">Envie uma combinada manual para ver a avaliação e os rearranjos.</p>
+          )}
+          {combinedHistory.length > 0 && (
+            <div className="history-block">
+              <h3>Combinadas persistidas</h3>
+              <div className="list">
+                {combinedHistory.slice(0, 3).map((item, index) => (
+                  <article className="row" key={`${item.quality_score}-${index}`}>
+                    <div>
+                      <strong>Odd {item.offered_combined_odd.toFixed(2)} · score {item.quality_score}</strong>
+                      <span>{item.legs.length} pernas · EV {brl(item.expected_value)} · risco {item.risk_label}</span>
+                    </div>
+                    <Badge tone={item.recommendation === "GOOD_OPPORTUNITY" ? "good" : item.recommendation === "AVOID" ? "bad" : "watch"}>
+                      {item.recommendation}
+                    </Badge>
+                  </article>
+                ))}
+              </div>
+            </div>
           )}
         </Panel>
       </section>

@@ -1,28 +1,31 @@
 # Robet
 
-Robet é um laboratório local de análise probabilística para futebol. O MVP começa pela Copa do Mundo em modo pré-jogo, usando dados mockados para listar partidas, carregar odds, calcular probabilidade implícita, probabilidade interna inicial, edge, valor esperado, recomendações ranqueadas, combinadas manuais, simulação de banca e aprendizados simples.
+Robet e um laboratorio local de analise probabilistica para futebol. O MVP comeca pela Copa do Mundo em modo pre-jogo, usando dados mockados para listar partidas, carregar odds, calcular probabilidade implicita, probabilidade interna inicial, edge, valor esperado, recomendacoes ranqueadas, combinadas manuais, simulacao de banca, historico persistido e aprendizados simples.
 
-O Robet não faz apostas reais, não automatiza casas de aposta, não faz scraping, não burla anti-bot/CAPTCHA, não implementa live betting neste ciclo e não usa IA para decidir recomendações.
+O Robet nao faz apostas reais, nao automatiza casas de aposta, nao faz scraping, nao burla anti-bot/CAPTCHA, nao implementa live betting neste ciclo e nao usa IA para decidir recomendacoes.
 
 ## Stack
 
-- Backend: Python, FastAPI, Pydantic, SQLAlchemy, pytest.
+- Backend: Python, FastAPI, Pydantic, SQLAlchemy, Alembic e pytest.
 - Banco: PostgreSQL via Docker Compose.
-- Frontend: React, TypeScript, Vite.
+- Frontend: React, TypeScript e Vite.
 - Modo atual: `USE_MOCK_PROVIDERS=true`.
 
-## Configuração
+## Ambiente
 
-1. Copie o exemplo de ambiente:
+Copie o exemplo de ambiente:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-2. Mantenha o primeiro ciclo com mocks:
+O `.env` real nunca deve ser commitado. Ele ja esta ignorado pelo `.gitignore`.
+
+Mantenha este ciclo com mocks e seguranca ativa:
 
 ```env
 USE_MOCK_PROVIDERS=true
+AI_ENABLED=false
 ENABLE_REAL_MONEY_MODE=false
 ENABLE_AUTO_BETTING=false
 ENABLE_BOOKMAKER_SCRAPING=false
@@ -31,38 +34,53 @@ ENABLE_LOGGED_BOOKMAKER_AUTOMATION=false
 ENABLE_LIVE_MODE=false
 ```
 
-3. Suba o PostgreSQL:
+Nao altere para `USE_MOCK_PROVIDERS=false` ate o fluxo persistido mockado estar validado.
+
+## PostgreSQL
+
+Suba o banco local:
 
 ```powershell
 docker compose up -d postgres
 ```
 
-O MVP mockado não depende de dados persistidos para funcionar, mas o PostgreSQL já fica previsto para a evolução de rastreabilidade.
+O backend usa `DATABASE_URL` do `.env`, por padrao:
+
+```env
+DATABASE_URL=postgresql+psycopg://robet:robet_password@localhost:5432/robet
+```
 
 ## Backend
 
-Instale as dependências e rode a API:
+Instale dependencias e rode migrations:
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+alembic upgrade head
+```
+
+Rode a API:
+
+```powershell
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Endpoints principais:
+Com a API rodando, popule os dados mockados persistidos:
 
-- `GET /health`
-- `GET /matches`
-- `GET /matches/world-cup`
-- `GET /recommendations`
-- `POST /recommendations/run-mock`
-- `POST /bet-builder/evaluate`
-- `POST /bet-builder/rearrange`
-- `GET /bankroll`
-- `GET /learning/insights`
-- `GET /settings`
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/dev/seed
+```
+
+Para resetar dados locais de desenvolvimento:
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/dev/reset
+```
+
+`/dev/seed` e `/dev/reset` so funcionam quando `APP_ENV=development`.
 
 ## Frontend
 
@@ -76,6 +94,22 @@ npm run dev
 
 Acesse `http://127.0.0.1:3000`.
 
+## Endpoints
+
+- `GET /health`
+- `GET /matches`
+- `GET /matches/world-cup`
+- `GET /recommendations`
+- `POST /recommendations/run-mock`
+- `GET /bet-builder/history`
+- `POST /bet-builder/evaluate`
+- `POST /bet-builder/rearrange`
+- `GET /bankroll`
+- `GET /learning/insights`
+- `GET /settings`
+- `POST /dev/seed`
+- `POST /dev/reset`
+
 ## Testes
 
 ```powershell
@@ -83,7 +117,7 @@ cd backend
 python -m pytest
 ```
 
-Os testes cobrem probabilidade implícita, EV, stake, probabilidade conjunta, penalidade de correlação, avaliação de combinada, rearranjo, flags proibidas e recomendações ranqueadas.
+Os testes cobrem calculos probabilisticos, EV, stake, combinadas, flags proibidas, endpoints principais, criacao das entidades persistidas, seed idempotente, reset em desenvolvimento e bloqueio de seed/reset fora de desenvolvimento.
 
 ## Mocks
 
@@ -95,8 +129,8 @@ O ciclo atual usa jogos mockados da Copa, incluindo:
 - South Africa x South Korea
 - Canada x Switzerland
 
-Também existem odds mockadas para `h2h`, `totals`, escanteios e cartões. A lógica principal é estatística simples e extensível, sem decisão por IA.
+Tambem existem odds mockadas para `h2h`, `totals`, escanteios e cartoes. A logica principal e estatistica simples e extensivel, sem decisao por IA.
 
-## Futuras APIs reais
+## APIs reais
 
-Só altere para `USE_MOCK_PROVIDERS=false` depois do fluxo mockado estar validado. Quando isso acontecer, preencha `FOOTBALL_API_KEY`, `ODDS_API_KEY` e mantenha entrada manual como fallback para mercados não cobertos pelas APIs.
+APIs reais continuam desativadas neste ciclo. Nao chame API-Football, The Odds API, OpenAI, casas de aposta ou sites externos. A futura ativacao exige o fluxo mockado persistido validado, tratamento de erro de API, cache/logs de chamada e entrada manual preservada.
